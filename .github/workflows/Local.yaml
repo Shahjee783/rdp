@@ -1,4 +1,4 @@
-name: RDP-LocalToNet-Fixed
+name: RDP-NetBird-Final
 
 on:
   workflow_dispatch:
@@ -9,61 +9,47 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Configure Windows RDP Settings
+      - name: Configure Windows RDP
         run: |
-          # Enable RDP and allow connections
+          # Enable Remote Desktop and open Firewall
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          
-          # Allow RDP through Windows Firewall
-          netsh advfirewall firewall add rule name="RDP-In" dir=in action=allow protocol=TCP localport=3389
-          
-          # Force Restart Remote Desktop Service
+          netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User
         run: |
-          $password = "P@ssword123!"
+          $password = "NetBird@RDP2024"
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
           echo "RDP_PASS=$password" >> $env:GITHUB_ENV
 
-      - name: Install and Start LocalToNet
-        shell: cmd
-        run: |
-          :: 1. Download LocalToNet using curl (more stable)
-          curl -L "https://localtonet.com" -o ltn.zip
-          
-          :: 2. Extract using tar (built-in to Windows)
-          tar -xf ltn.zip
-          
-          :: 3. Authenticate with your Token
-          localtonet.exe authtoken iFZOGech42E1d3NToSqvtaDw8yWjR7xbH
-          
-          :: 4. Start the TCP Tunnel for RDP in the background
-          start /b localtonet.exe tcp 3389
-          
-          :: Wait for initialization
-          timeout /t 15 /nobreak
+      - name: Connect to NetBird
+        uses: netbirdio/netbird-action@v1
+        with:
+          # Using your provided Setup Key
+          setup-key: "8E5FF2CC-8CD1-4668-A4CD-1EA2EB94AF93"
 
-      - name: Show Connection Details
+      - name: Connection Details
         run: |
-          Write-Host "=============================================="
-          Write-Host "RDP SERVER STATUS: ONLINE"
+          # Wait a moment for IP assignment
+          Start-Sleep -Seconds 10
+          
+          Write-Host "=========================================="
+          Write-Host "NETBIRD RDP IS ONLINE"
           Write-Host "Username: RDPUser"
           Write-Host "Password: ${{ env.RDP_PASS }}"
-          Write-Host "----------------------------------------------"
-          Write-Host "HOW TO CONNECT:"
-          Write-Host "1. Open the [LocalToNet Dashboard](https://localtonet.com)"
-          Write-Host "2. Copy the 'Public Address' (Example: connect.localtonet.com:12345)"
-          Write-Host "3. Open your RDP app and paste that address."
-          Write-Host "=============================================="
+          Write-Host "------------------------------------------"
+          Write-Host "TO CONNECT:"
+          Write-Host "1. Install NetBird on your device and log in."
+          Write-Host "2. Go to https://app.netbird.io"
+          Write-Host "3. Copy the IP of the 'windows-latest' machine."
+          Write-Host "4. Use that IP in your RDP App."
+          Write-Host "=========================================="
           
-          # Keep the Runner Alive
+          # Keep session active
           while ($true) {
-              Write-Host "Heartbeat: $(Get-Date) - Connection Active"
+              Write-Host "Keep-Alive: $(Get-Date)"
               Start-Sleep -Seconds 300
           }
-          
