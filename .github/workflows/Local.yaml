@@ -6,19 +6,19 @@ on:
 jobs:
   secure-rdp:
     runs-on: windows-latest
-    timeout-minutes: 360  # Maximum GitHub runner time (6 hours)
+    timeout-minutes: 360
 
     steps:
       - name: Configure Windows RDP Settings
         run: |
-          # Enable Remote Desktop
+          # Enable RDP and allow connections
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
           
-          # Open Firewall for Port 3389
-          netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+          # Allow RDP through Windows Firewall
+          netsh advfirewall firewall add rule name="RDP-In" dir=in action=allow protocol=TCP localport=3389
           
-          # Restart RDP Service
+          # Force Restart Remote Desktop Service
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User
@@ -27,37 +27,43 @@ jobs:
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
           echo "RDP_PASS=$password" >> $env:GITHUB_ENV
 
-      - name: Setup LocalToNet Tunnel
+      - name: Install and Start LocalToNet
+        shell: cmd
         run: |
-          # 1. Download the correct Windows x64 binary
-          Invoke-WebRequest -Uri "https://localtonet.com" -OutFile "ltn.zip"
+          :: 1. Download LocalToNet using curl (more stable)
+          curl -L "https://localtonet.com" -o ltn.zip
           
-          # 2. Extract the ZIP
-          Expand-Archive -Path "ltn.zip" -DestinationPath "."
+          :: 2. Extract using tar (built-in to Windows)
+          tar -xf ltn.zip
           
-          # 3. Register Auth Token (Using your provided token)
-          ./localtonet.exe authtoken iFZOGech42E1d3NToSqvtaDw8yWjR7xbH
+          :: 3. Authenticate with your Token
+          localtonet.exe authtoken iFZOGech42E1d3NToSqvtaDw8yWjR7xbH
           
-          # 4. Start TCP Tunnel for RDP in background
-          Start-Process -FilePath "./localtonet.exe" -ArgumentList "tcp 3389" -WindowStyle Hidden
+          :: 4. Start the TCP Tunnel for RDP in the background
+          start /b localtonet.exe tcp 3389
           
-          # Give it time to initialize
-          Start-Sleep -Seconds 20
+          :: Wait for initialization
+          timeout /t 15 /nobreak
 
-      - name: Connection Information
+      - name: Show Connection Details
         run: |
-          Write-Host "=========================================="
-          Write-Host "RDP STATUS: ACTIVE"
+          Write-Host "=============================================="
+          Write-Host "RDP SERVER STATUS: ONLINE"
           Write-Host "Username: RDPUser"
           Write-Host "Password: ${{ env.RDP_PASS }}"
-          Write-Host "------------------------------------------"
+          Write-Host "----------------------------------------------"
           Write-Host "HOW TO CONNECT:"
-          Write-Host "1. Log in to https://localtonet.com"
-          Write-Host "2. Look for the 'Public Address' (e.g., connect.localtonet.com:12345)"
-          Write-Host "3. Enter that address into your RDP/Windows App"
-          Write-Host "=========================================="
+          Write-Host "1. Open the [LocalToNet Dashboard](https://localtonet.com)"
+          Write-Host "2. Copy the 'Public Address' (Example: connect.localtonet.com:12345)"
+          Write-Host "3. Open your RDP app and paste that address."
+          Write-Host "=============================================="
           
-          # Keep the session alive for 6 hours
-          while ($true) { Start-Sleep -Seconds 300 }
+          # Keep the Runner Alive
+          while ($true) {
+              Write-Host "Heartbeat: $(Get-Date) - Connection Active"
+              Start-Sleep -Seconds 300
+          }
+          
