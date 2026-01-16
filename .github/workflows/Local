@@ -1,0 +1,53 @@
+name: RDP-LocalToNet
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360  # GitHub free tier limit is 6 hours (360 mins)
+
+    steps:
+      - name: Configure Core RDP Settings
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+
+      - name: Create RDP User
+        run: |
+          $password = "P@ssword123!" # You can change this or use your randomizer logic
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name "RDPUser" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
+          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+
+      - name: Install and Start LocalToNet
+        run: |
+          # Download LocalToNet Client
+          Invoke-WebRequest -Uri "https://localtonet.com" -OutFile "ltn.zip"
+          Expand-Archive -Path "ltn.zip" -DestinationPath "."
+          
+          # Start the tunnel in the background
+          # Note: The 'authtoken' flag links it to your account
+          Start-Process -FilePath ".\localtonet.exe" -ArgumentList "authtoken iFZOGech42E1d3NToSqvtaDw8yWjR7xbH" -WindowStyle Hidden
+          Start-Sleep -Seconds 5
+          
+          # Create a TCP Tunnel for RDP port 3389
+          Start-Process -FilePath ".\localtonet.exe" -ArgumentList "tcp 3389" -WindowStyle Hidden
+          Start-Sleep -Seconds 10
+
+      - name: Connection Details
+        run: |
+          Write-Host "=== RDP LOGIN DETAILS ==="
+          Write-Host "Username: RDPUser"
+          Write-Host "Password: ${{ env.RDP_PASS }}"
+          Write-Host "1. Go to https://localtonet.com"
+          Write-Host "2. Copy the 'Public Address' (IP:Port) shown for your active TCP tunnel"
+          Write-Host "3. Paste that Address into your RDP Client"
+          Write-Host "========================="
+          
+          # Keep runner alive
+          while ($true) { Start-Sleep -Seconds 300 }
