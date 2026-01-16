@@ -1,0 +1,63 @@
+name: RDP-NetBird-Merged
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360  # GitHub limit is 6 hours
+
+    steps:
+      - name: Configure Core RDP Settings
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          
+          netsh advfirewall firewall delete rule name="RDP-NetBird"
+          netsh advfirewall firewall add rule name="RDP-NetBird" dir=in action=allow protocol=TCP localport=3389
+          Restart-Service -Name TermService -Force
+
+      - name: Create RDP User with Secure Password
+        run: |
+          Add-Type -AssemblyName System.Security
+          $charSet = @{
+              Upper   = [char[]](65..90)
+              Lower   = [char[]](97..122)
+              Number  = [char[]](48..57)
+              Special = ([char[]](33..47) + [char[]](58..64))
+          }
+          $rawPassword = @()
+          $rawPassword += $charSet.Upper | Get-Random -Count 4
+          $rawPassword += $charSet.Lower | Get-Random -Count 4
+          $rawPassword += $charSet.Number | Get-Random -Count 4
+          $rawPassword += $charSet.Special | Get-Random -Count 4
+          $password = -join ($rawPassword | Sort-Object { Get-Random })
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+          
+          echo "PLAIN_PASS=$password" >> $env:GITHUB_ENV
+
+      - name: Connect to NetBird
+        uses: netbirdio/netbird-action@v1
+        with:
+          setup-key: "8E5FF2CC-8CD1-4668-A4CD-1EA2EB94AF93"
+
+      - name: Maintain Connection
+        run: |
+          # Get NetBird IP for display
+          $nbIP = netbird status | Select-String -Pattern "NetBird IP: ([\d\.]+)"
+          
+          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "NetBird IP: $($nbIP.Matches.Value)"
+          Write-Host "Username: RDP"
+          Write-Host "Password: ${{ env.PLAIN_PASS }}"
+          Write-Host "==================`n"
+          
+          while ($true) {
+              Write-Host "[$(Get-Date)] RDP Active - Session expires in 6 hours"
+              Start-Sleep -Seconds 300
+          }
